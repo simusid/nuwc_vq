@@ -107,6 +107,7 @@ Notes:
 - MP3 support requires `torchaudio`.
 - Logs per-batch codebook usage and perplexity to validate token utilization.
 - Checkpoints are saved to `./checkpoints/pq_vqvae` by default.
+- Shows a progress bar while indexing files (disable with `--no-index-progress`).
 
 TensorBoard:
 ```bash
@@ -132,6 +133,7 @@ python /Users/gary/Desktop/nuwc_vq/scripts/export_tokens.py \
 Output:
 - Mirrors input folder structure under `./tokens/pq_vqvae`
 - Each file saves `.pt` with `tokens_1`, `tokens_2`, and metadata
+- Shows a progress bar while indexing files (disable with `--no-index-progress`).
 
 ## Requirements
 ```bash

@@ -41,13 +41,14 @@ class AudioSegmentDataset(Dataset):
         exts: Tuple[str, ...] = (".wav", ".mp3", ".flac"),
         normalize: bool = True,
         skip_mismatch: bool = False,
+        index_progress: bool = True,
     ):
         self.root = root
         self.sample_rate = sample_rate
         self.segment_samples = int(sample_rate * segment_seconds)
         self.normalize = normalize
         self.skip_mismatch = skip_mismatch
-        self.files = find_audio_files(root, exts)
+        self.files = find_audio_files(root, exts, show_progress=index_progress)
         if not self.files:
             raise FileNotFoundError(f"No audio files found in {root}")
 
@@ -99,6 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-dir", type=str, default="./checkpoints/pq_vqvae")
     parser.add_argument("--log-dir", type=str, default="./runs/pq_vqvae")
     parser.add_argument("--skip-mismatch", action="store_true")
+    parser.add_argument("--no-index-progress", action="store_true")
 
     # Model config overrides
     parser.add_argument("--num-embeddings-1", type=int, default=4096)
@@ -124,6 +126,7 @@ def main() -> None:
         segment_seconds=args.segment_seconds,
         normalize=True,
         skip_mismatch=args.skip_mismatch,
+        index_progress=not args.no_index_progress,
     )
     loader = DataLoader(
         dataset,

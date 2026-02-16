@@ -3,16 +3,42 @@ Audio IO utilities for NUWC VQ.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import List, Tuple
+from typing import Iterable, List, Tuple
 
 import torch
 
 
-def find_audio_files(root: Path, exts: Tuple[str, ...]) -> List[Path]:
-    files: List[Path] = []
-    for ext in exts:
-        files.extend(root.rglob(f"*{ext}"))
+def _iter_audio_paths(root: Path, exts: Tuple[str, ...]) -> Iterable[Path]:
+    for dirpath, _, filenames in os.walk(root):
+        for name in filenames:
+            if name.lower().endswith(exts):
+                yield Path(dirpath) / name
+
+
+def find_audio_files(
+    root: Path, exts: Tuple[str, ...], show_progress: bool = False
+) -> List[Path]:
+    if show_progress:
+        try:
+            from tqdm import tqdm  # type: ignore
+
+            files: List[Path] = []
+            with tqdm(
+                total=0,
+                unit="files",
+                desc="Indexing audio files",
+                leave=True,
+            ) as pbar:
+                for path in _iter_audio_paths(root, exts):
+                    files.append(path)
+                    pbar.update(1)
+            return sorted(files)
+        except Exception:
+            pass
+
+    files = [p for p in _iter_audio_paths(root, exts)]
     return sorted(files)
 
 

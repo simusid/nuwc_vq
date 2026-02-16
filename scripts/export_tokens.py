@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--normalize", action="store_true")
     parser.add_argument("--exts", type=str, default=".wav,.mp3,.flac")
+    parser.add_argument("--no-index-progress", action="store_true")
     return parser.parse_args()
 
 
@@ -67,7 +68,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     exts = tuple([e.strip() for e in args.exts.split(",") if e.strip()])
-    files = find_audio_files(data_dir, exts)
+    files = find_audio_files(data_dir, exts, show_progress=not args.no_index_progress)
     if not files:
         raise FileNotFoundError(f"No audio files found in {data_dir}")
 
