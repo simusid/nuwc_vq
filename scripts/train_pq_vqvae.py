@@ -101,6 +101,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-dir", type=str, default="./runs/pq_vqvae")
     parser.add_argument("--skip-mismatch", action="store_true")
     parser.add_argument("--no-index-progress", action="store_true")
+    parser.add_argument(
+        "--mp-context",
+        type=str,
+        default="spawn",
+        choices=["spawn", "fork", "forkserver", "none"],
+        help="Multiprocessing context for DataLoader when num_workers > 0.",
+    )
+    parser.add_argument(
+        "--loader-timeout",
+        type=int,
+        default=0,
+        help="Seconds to wait for a batch before timing out (0 = no timeout).",
+    )
 
     # Model config overrides
     parser.add_argument("--num-embeddings-1", type=int, default=4096)
@@ -128,6 +141,10 @@ def main() -> None:
         skip_mismatch=args.skip_mismatch,
         index_progress=not args.no_index_progress,
     )
+    mp_context = None
+    if args.num_workers > 0 and args.mp_context != "none":
+        mp_context = args.mp_context
+
     loader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -135,6 +152,8 @@ def main() -> None:
         num_workers=args.num_workers,
         drop_last=True,
         pin_memory=True,
+        multiprocessing_context=mp_context,
+        timeout=args.loader_timeout,
     )
 
     config = PQVQVAEConfig(
