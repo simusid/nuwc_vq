@@ -124,6 +124,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--latent-channels", type=int, default=128)
     parser.add_argument("--commitment-cost", type=float, default=0.25)
     parser.add_argument("--decay", type=float, default=0.99)
+    parser.add_argument("--usage-regularizer-weight", type=float, default=0.1)
+    parser.add_argument("--dead-code-threshold", type=float, default=1.0)
 
     return parser.parse_args()
 
@@ -165,6 +167,8 @@ def main() -> None:
         embedding_dim_2=args.embedding_dim_2,
         commitment_cost=args.commitment_cost,
         decay=args.decay,
+        usage_regularizer_weight=args.usage_regularizer_weight,
+        dead_code_threshold=args.dead_code_threshold,
     )
     model = PQVQVAE(config).to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -188,7 +192,13 @@ def main() -> None:
             x = x.to(args.device)
 
             x_hat, stats = model(x)
-            loss = model.loss(x, x_hat, stats["commitment_loss"])
+            loss = model.loss(
+                x,
+                x_hat,
+                stats["commitment_loss"],
+                usage_loss=stats.get("usage_loss"),
+                usage_weight=config.usage_regularizer_weight,
+            )
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -199,8 +209,10 @@ def main() -> None:
                     # Unique code usage per batch
                     idx1 = stats["encoding_idx_1"].reshape(-1)
                     idx2 = stats["encoding_idx_2"].reshape(-1)
-                    usage_1 = idx1.unique().numel() / args.num_embeddings_1
-                    usage_2 = idx2.unique().numel() / args.num_embeddings_2
+                    used_1 = idx1.unique().numel()
+                    used_2 = idx2.unique().numel()
+                    usage_1 = used_1 / args.num_embeddings_1
+                    usage_2 = used_2 / args.num_embeddings_2
 
                     writer.add_scalar("train/loss", loss.item(), global_step)
                     writer.add_scalar(
@@ -216,6 +228,18 @@ def main() -> None:
                     )
                     writer.add_scalar("train/usage_1", usage_1, global_step)
                     writer.add_scalar("train/usage_2", usage_2, global_step)
+                    if "usage_loss_1" in stats:
+                        writer.add_scalar(
+                            "train/usage_loss_1",
+                            stats["usage_loss_1"].item(),
+                            global_step,
+                        )
+                    if "usage_loss_2" in stats:
+                        writer.add_scalar(
+                            "train/usage_loss_2",
+                            stats["usage_loss_2"].item(),
+                            global_step,
+                        )
 
                     print(
                         " | ".join(
@@ -225,8 +249,8 @@ def main() -> None:
                                 f"loss={loss.item():.4f}",
                                 f"ppl1={stats['perplexity_1'].item():.2f}",
                                 f"ppl2={stats['perplexity_2'].item():.2f}",
-                                f"usage1={usage_1:.3f}",
-                                f"usage2={usage_2:.3f}",
+                                f"usage1={usage_1:.5f}({used_1})",
+                                f"usage2={usage_2:.5f}({used_2})",
                             ]
                         )
                     )

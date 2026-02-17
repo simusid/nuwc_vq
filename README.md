@@ -109,6 +109,7 @@ Notes:
 - Checkpoints are saved to `./checkpoints/pq_vqvae` by default.
 - Shows a progress bar while indexing files (disable with `--no-index-progress`).
 - If you see DataLoader stalls with `num_workers > 0`, use `--mp-context spawn` (default) or set `--num-workers 0`.
+- Includes a usage regularizer and dead-code reinitialization to prevent codebook collapse.
 
 TensorBoard:
 ```bash

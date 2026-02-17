@@ -107,6 +107,7 @@ class EMAQuantizer(nn.Module):
         decay: float = 0.99,
         eps: float = 1e-5,
         commitment_cost: float = 0.25,
+        dead_code_threshold: float = 0.0,
     ):
         super().__init__()
         self.num_embeddings = num_embeddings
@@ -114,6 +115,7 @@ class EMAQuantizer(nn.Module):
         self.decay = decay
         self.eps = eps
         self.commitment_cost = commitment_cost
+        self.dead_code_threshold = dead_code_threshold
 
         embed = torch.randn(num_embeddings, embedding_dim)
         self.register_buffer("embed", embed)
@@ -156,17 +158,29 @@ class EMAQuantizer(nn.Module):
                 embed_normalized = self.embed_avg / cluster_size.unsqueeze(1)
                 self.embed.copy_(embed_normalized)
 
+                if self.dead_code_threshold > 0.0:
+                    dead = self.cluster_size < self.dead_code_threshold
+                    if dead.any():
+                        rand_idx = torch.randint(0, x_flat.size(0), (dead.sum(),))
+                        self.embed[dead] = x_flat[rand_idx]
+                        self.embed_avg[dead] = x_flat[rand_idx]
+                        self.cluster_size[dead] = self.dead_code_threshold
+
         commitment_loss = self.commitment_cost * F.mse_loss(quantized.detach(), x)
         quantized = x + (quantized - x).detach()
 
         avg_probs = encodings.mean(dim=0)
         perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))
+        usage_loss = torch.sum(
+            avg_probs * torch.log(avg_probs * self.num_embeddings + 1e-10)
+        )
 
         stats = {
             "commitment_loss": commitment_loss,
             "perplexity": perplexity,
             "avg_probs": avg_probs,
             "encoding_idx": encoding_idx.view(b, t),
+            "usage_loss": usage_loss,
         }
         return quantized, stats
 
@@ -181,6 +195,7 @@ class ProductEMAQuantizer(nn.Module):
         decay: float = 0.99,
         eps: float = 1e-5,
         commitment_cost: float = 0.25,
+        dead_code_threshold: float = 0.0,
     ):
         super().__init__()
         self.embedding_dim_1 = embedding_dim_1
@@ -192,6 +207,7 @@ class ProductEMAQuantizer(nn.Module):
             decay=decay,
             eps=eps,
             commitment_cost=commitment_cost,
+            dead_code_threshold=dead_code_threshold,
         )
         self.q2 = EMAQuantizer(
             num_embeddings=num_embeddings_2,
@@ -199,6 +215,7 @@ class ProductEMAQuantizer(nn.Module):
             decay=decay,
             eps=eps,
             commitment_cost=commitment_cost,
+            dead_code_threshold=dead_code_threshold,
         )
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
@@ -224,6 +241,9 @@ class ProductEMAQuantizer(nn.Module):
             "avg_probs_2": s2["avg_probs"],
             "encoding_idx_1": s1["encoding_idx"],
             "encoding_idx_2": s2["encoding_idx"],
+            "usage_loss": s1["usage_loss"] + s2["usage_loss"],
+            "usage_loss_1": s1["usage_loss"],
+            "usage_loss_2": s2["usage_loss"],
         }
         return quantized, stats
 
@@ -241,6 +261,8 @@ class PQVQVAEConfig:
     embedding_dim_2: int = 64
     decay: float = 0.99
     commitment_cost: float = 0.25
+    usage_regularizer_weight: float = 0.1
+    dead_code_threshold: float = 1.0
 
 
 class PQVQVAE(nn.Module):
@@ -264,6 +286,7 @@ class PQVQVAE(nn.Module):
             embedding_dim_2=config.embedding_dim_2,
             decay=config.decay,
             commitment_cost=config.commitment_cost,
+            dead_code_threshold=config.dead_code_threshold,
         )
         self.decoder = Decoder(
             out_channels=config.out_channels,
@@ -283,7 +306,12 @@ class PQVQVAE(nn.Module):
         x: torch.Tensor,
         x_hat: torch.Tensor,
         commitment_loss: torch.Tensor,
+        usage_loss: torch.Tensor | None = None,
+        usage_weight: float = 0.0,
         recon_weight: float = 1.0,
     ) -> torch.Tensor:
         recon = F.l1_loss(x_hat, x)
-        return recon_weight * recon + commitment_loss
+        total = recon_weight * recon + commitment_loss
+        if usage_loss is not None and usage_weight > 0.0:
+            total = total + usage_weight * usage_loss
+        return total
