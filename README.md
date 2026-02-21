@@ -111,6 +111,11 @@ Notes:
 - If you see DataLoader stalls with `num_workers > 0`, use `--mp-context spawn` (default) or set `--num-workers 0`.
 - Includes a usage regularizer and dead-code reinitialization to prevent codebook collapse.
 
+Validation and early stopping:
+- Use `--val-dir /path/to/val` to provide a separate validation set, or set `--val-split 0.1` to split by file.
+- Enable early stopping with `--early-stop` and tune `--patience` and `--min-delta`.
+- Limit validation cost with `--val-max-batches N`.
+
 TensorBoard:
 ```bash
 tensorboard --logdir ./runs/pq_vqvae
